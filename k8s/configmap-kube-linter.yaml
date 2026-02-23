@@ -10,12 +10,10 @@ data:
   kube-linter.yaml: |
     checks:
       include:
-        # Security checks (HIGH IMPACT)
         - "host-network"
         - "host-pid"
         - "host-ipc"
         - "privileged-container"
-        # Best practice checks (LOW IMPACT)
         - "no-read-only-root-fs"
         - "unset-cpu-requirements"
         - "unset-memory-requirements"

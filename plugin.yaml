@@ -12,17 +12,10 @@ spec:
         command -v kubeconform || exit 1
         command -v pluto || exit 1
         command -v kube-linter || exit 1
-        command -v kyverno || exit 1
         echo "All validation tools found."
 
-  # Discover command - match directories with deployment.yaml or any common K8s manifest
-  discover:
-    find:
-      command: [sh, -c, "find . -name '*.yaml' | head -1"]
-
-  # Generate command - main validation and fix pipeline
+  # Generate command - main validation pipeline
   generate:
     command: ["/home/argocd/scripts/validate.sh"]
 
-  # Allow git credentials for rollback commits
   preserveFileMode: false

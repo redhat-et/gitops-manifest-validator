@@ -15,16 +15,6 @@ spec:
       - name: cmp-kube-linter-config
         configMap:
           name: cmp-kube-linter-config
-      # Git SSH key for rollback
-      - name: cmp-git-ssh-key
-        secret:
-          secretName: cmp-git-ssh-key
-          defaultMode: 0444
-          items:
-            - key: ssh-privatekey
-              path: id_rsa
-            - key: known_hosts
-              path: known_hosts
       # CMP temporary directory
       - name: cmp-tmp
         emptyDir: {}
@@ -52,21 +42,15 @@ spec:
         # Environment variables
         env:
           - name: KUBERNETES_VERSION
-            value: "1.28.0"
+            valueFrom:
+              configMapKeyRef:
+                name: cmp-kubeconform-config
+                key: KUBERNETES_VERSION
           - name: TARGET_KUBERNETES_VERSION
-            value: "v1.29.0"
-          - name: GIT_SSH_KEY_PATH
-            value: "/home/argocd/.ssh/id_rsa"
-          - name: GIT_USER_EMAIL
             valueFrom:
               configMapKeyRef:
-                name: cmp-git-config
-                key: GIT_USER_EMAIL
-          - name: GIT_USER_NAME
-            valueFrom:
-              configMapKeyRef:
-                name: cmp-git-config
-                key: GIT_USER_NAME
+                name: cmp-pluto-config
+                key: TARGET_KUBERNETES_VERSION
 
         # Resource limits
         resources:
@@ -93,10 +77,6 @@ spec:
           - name: cmp-kube-linter-config
             mountPath: /home/argocd/config/kube-linter.yaml
             subPath: kube-linter.yaml
-          # SSH key for git operations
-          - name: cmp-git-ssh-key
-            mountPath: /home/argocd/.ssh
-            readOnly: true
           # Temporary directory
           - name: cmp-tmp
             mountPath: /tmp

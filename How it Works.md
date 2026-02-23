@@ -1,12 +1,12 @@
 # Manifest Validator CMP — How It Works
 
-This is an **ArgoCD Config Management Plugin (CMP)** that validates Kubernetes manifests during deployment and takes automated corrective action based on error severity.
+This is an **ArgoCD Config Management Plugin (CMP)** that validates Kubernetes manifests during deployment and reports any issues found.
 
 ## How It Works
 
 ### Entry Point
 
-ArgoCD invokes `scripts/validate.sh` as a sidecar container whenever an Application using this plugin syncs. The plugin runs inside a custom Docker image containing four validation tools: **Kubeconform**, **Pluto**, **KubeLinter**, and **Kyverno**.
+ArgoCD invokes `scripts/validate.sh` as a sidecar container whenever an Application using this plugin syncs. The plugin runs inside a custom Docker image containing three validation tools: **Kubeconform**, **Pluto**, and **KubeLinter**.
 
 ### Validation Pipeline
 
@@ -14,49 +14,36 @@ The flow has four stages:
 
 **1. Collect YAML files** — Finds all `*.yaml`/`*.yml` files, excluding `kustomization.yaml` and hidden files.
 
-**2. Run three validation tools in parallel:**
+**2. Run three validation tools:**
 
 | Tool | Purpose |
 |------|---------|
-| **Kubeconform** | Schema validation against K8s v1.28.0 OpenAPI specs |
-| **Pluto** | Detects deprecated/removed API versions targeting K8s v1.29.0 |
-| **KubeLinter** | Security and best-practice checks (configured in `config/kube-linter.yaml`) |
+| **Kubeconform** | Schema validation against K8s OpenAPI specs |
+| **Pluto** | Detects deprecated/removed API versions |
+| **KubeLinter** | Security and best-practice checks (configured via ConfigMap) |
 
-**3. Classify errors** — `scripts/utils.sh` parses the JSON output from each tool and sorts findings into two buckets:
+**3. Collect errors** — `scripts/utils.sh` parses the JSON output from each tool and collects all findings into a single list.
 
-- **HIGH impact** — Schema failures, removed APIs, and security violations (privileged containers, host network/PID/IPC, running as root, dangerous capabilities)
-- **LOW impact** — Deprecated (but still functional) APIs and missing best practices (no probes, no resource limits, writable root FS, `latest` tag, etc.)
-
-**4. Act based on severity:**
+**4. Report and pass through:**
 
 ```
-HIGH impact errors found?
-  └─ YES → Log errors, generate report, git revert the commit, exit 1
-              (ArgoCD blocks the deployment)
+Issues found?
+  └─ YES → Log warnings, generate JSON report at /tmp/validation-report.json,
+           output original manifests to stdout, exit 0
+           (ArgoCD proceeds with deployment)
 
-LOW impact errors found?
-  └─ YES → Apply Kyverno mutation policies to auto-fix manifests,
-           output fixed manifests to stdout, exit 0
-           (ArgoCD deploys the corrected versions)
-
-No errors?
+No issues?
   └─ Output original manifests to stdout, exit 0
 ```
 
-### Auto-Fix Policies (`policies/`)
+### Configuration
 
-When low-impact issues are found, Kyverno applies five mutation policies to patch the manifests:
+Each tool is configured via its own ConfigMap:
 
-- `add-labels.yaml` — Adds `app.kubernetes.io/managed-by: argocd`
-- `add-resource-limits.yaml` — Sets CPU (100m/500m) and memory (128Mi/256Mi) requests/limits
-- `set-image-pull-policy.yaml` — Sets `imagePullPolicy: IfNotPresent`
-- `add-probes.yaml` — Adds liveness/readiness probes (TCP port 8080)
-- `set-security-context.yaml` — Sets `runAsNonRoot`, drops all capabilities, disables privilege escalation
-
-### Git Rollback (`scripts/git-rollback.sh`)
-
-For high-impact errors, the plugin clones the repo via SSH, creates a revert commit with a detailed message listing all validation errors, and pushes it back to the branch. This prevents the bad manifests from being retried.
+- **`cmp-kubeconform-config`** — Sets the `KUBERNETES_VERSION` environment variable for schema validation
+- **`cmp-pluto-config`** — Sets the `TARGET_KUBERNETES_VERSION` environment variable for API deprecation checks
+- **`cmp-kube-linter-config`** — Mounts a `kube-linter.yaml` config file with the list of enabled/disabled checks
 
 ### Deployment
 
-The validator runs as a sidecar container in the ArgoCD repo-server pod, configured via `k8s/argocd-patch.yaml`. ConfigMaps provide the plugin registration, KubeLinter config, and git credentials. An SSH key secret enables the git rollback capability.
+The validator runs as a sidecar container in the ArgoCD repo-server pod, configured via `k8s/argocd-patch.yaml`. ConfigMaps provide the plugin registration, tool configurations, and KubeLinter check rules.

@@ -1,8 +1,6 @@
 #!/bin/bash
 set -uo pipefail
 
-source /home/argocd/scripts/utils.sh
-
 WORK_DIR="$1"
 CONFIG_FILE="/home/argocd/config/kube-linter.yaml"
 

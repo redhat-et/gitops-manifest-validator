@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cmp-pluto-config
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/name: manifest-validator
+    app.kubernetes.io/component: config
+data:
+  TARGET_KUBERNETES_VERSION: "v1.29.0"

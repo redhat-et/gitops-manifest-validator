@@ -18,11 +18,8 @@ data:
         args:
           - |
             echo "Initializing manifest-validator..."
-            kubeconform -v && pluto version && kube-linter version && kyverno version
+            kubeconform -v && pluto version && kube-linter version
             echo "All validation tools verified."
-      discover:
-        find:
-          command: [sh, -c, 'find . -name "*.yaml" -o -name "*.yml" | grep -v "^\./\.git" | head -1']
       generate:
         command: ["/home/argocd/scripts/validate.sh"]
       preserveFileMode: false
