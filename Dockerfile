@@ -3,6 +3,7 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.3
 ARG KUBECONFORM_VERSION=0.6.4
 ARG PLUTO_VERSION=5.19.4
 ARG KUBE_LINTER_VERSION=0.6.8
+ARG TARGETARCH=amd64
 
 # Install required packages
 RUN microdnf install -y \
@@ -13,16 +14,16 @@ RUN microdnf install -y \
     shadow-utils \
     && microdnf clean all
 
-# Install kubeconform (arm64)
-RUN curl -sL https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-arm64.tar.gz \
+# Install kubeconform
+RUN curl -sL https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-${TARGETARCH}.tar.gz \
     | tar xz -C /usr/local/bin kubeconform
 
-# Install pluto (arm64)
-RUN curl -sL https://github.com/FairwindsOps/pluto/releases/download/v${PLUTO_VERSION}/pluto_${PLUTO_VERSION}_linux_arm64.tar.gz \
+# Install pluto
+RUN curl -sL https://github.com/FairwindsOps/pluto/releases/download/v${PLUTO_VERSION}/pluto_${PLUTO_VERSION}_linux_${TARGETARCH}.tar.gz \
     | tar xz -C /usr/local/bin pluto
 
-# Install kube-linter (arm64)
-RUN curl -sL https://github.com/stackrox/kube-linter/releases/download/v${KUBE_LINTER_VERSION}/kube-linter-linux_arm64.tar.gz \
+# Install kube-linter
+RUN curl -sL https://github.com/stackrox/kube-linter/releases/download/v${KUBE_LINTER_VERSION}/kube-linter-linux_${TARGETARCH}.tar.gz \
     | tar xz -C /usr/local/bin
 
 # Create argocd user (UID 999 required by ArgoCD CMP)
@@ -40,7 +41,8 @@ COPY plugin.yaml /home/argocd/cmp-server/config/plugin.yaml
 
 # Set permissions
 RUN chmod +x /home/argocd/scripts/*.sh \
-    && chown -R 999:0 /home/argocd
+    && chown -R 999:0 /home/argocd \
+    && chmod -R g=u /home/argocd
 
 USER 999
 WORKDIR /home/argocd

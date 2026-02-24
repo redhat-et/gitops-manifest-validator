@@ -33,7 +33,6 @@ spec:
         # Security context - runs as argocd user (999)
         securityContext:
           runAsNonRoot: true
-          runAsUser: 999
           allowPrivilegeEscalation: false
           capabilities:
             drop:

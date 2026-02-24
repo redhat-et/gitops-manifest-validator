@@ -7,6 +7,8 @@ source /home/argocd/scripts/utils.sh
 # Configuration
 # CMP receives files in current directory, not in ARGOCD_APP_SOURCE_PATH
 WORK_DIR="."
+mkdir /tmp/unvalidated-manifests/
+cp -r "$WORK_DIR" /tmp/unvalidated-manifests/
 OUTPUT_DIR="/tmp/validated-manifests"
 
 

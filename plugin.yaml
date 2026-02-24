@@ -14,6 +14,11 @@ spec:
         command -v kube-linter || exit 1
         echo "All validation tools found."
 
+  # Discover - match directories containing YAML files
+  discover:
+    find:
+      glob: "**/*.yaml"
+
   # Generate command - main validation pipeline
   generate:
     command: ["/home/argocd/scripts/validate.sh"]
