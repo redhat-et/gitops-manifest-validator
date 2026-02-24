@@ -79,3 +79,12 @@ spec:
           # Temporary directory
           - name: cmp-tmp
             mountPath: /tmp
+
+  server:
+    volumes:
+      - name: manifest-validator-extension
+        configMap:
+          name: manifest-validator-extension
+    volumeMounts:
+      - name: manifest-validator-extension
+        mountPath: /tmp/extensions/manifest-validator/

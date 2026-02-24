@@ -113,6 +113,32 @@ generate_error_report() {
 EOF
 }
 
+output_report_configmap() {
+    local report_file="/tmp/validation-report.json"
+    local namespace="${ARGOCD_APP_NAMESPACE:-default}"
+
+    if [ ! -f "$report_file" ]; then
+        log_warn "No validation report found at $report_file"
+        return
+    fi
+
+    local report_json
+    report_json=$(cat "$report_file")
+
+    cat <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: manifest-validator-report
+  namespace: $namespace
+  labels:
+    manifest-validator/report: "true"
+data:
+  report.json: |
+$(echo "$report_json" | sed 's/^/    /')
+EOF
+}
+
 export -f log_info log_warn log_error
 export -f collect_kubeconform_errors collect_pluto_errors collect_kubelinter_errors
-export -f generate_error_report
+export -f generate_error_report output_report_configmap

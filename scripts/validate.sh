@@ -59,9 +59,9 @@ collect_kubelinter_errors /tmp/kubelinter-output.json
 # Step 3: Generate report
 log_info "Validation complete: ${#VALIDATION_ERRORS[@]} issues found"
 
-if [ ${#VALIDATION_ERRORS[@]} -gt 0 ]; then
-    generate_error_report
+generate_error_report
 
+if [ ${#VALIDATION_ERRORS[@]} -gt 0 ]; then
     for err in "${VALIDATION_ERRORS[@]}"; do
         local_tool="${err%%|*}"
         local_msg="${err#*|}"
@@ -76,5 +76,9 @@ for file in $YAML_FILES; do
     echo ""
     echo "---"
 done
+
+# Step 5: Output validation report as ConfigMap
+output_report_configmap
+echo "---"
 
 log_info "Manifest validation complete"
