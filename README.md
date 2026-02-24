@@ -7,8 +7,9 @@ A Config Management Plugin (CMP) for ArgoCD/OpenShift GitOps that validates Kube
 - **Schema Validation** (Kubeconform) - Validates manifests against Kubernetes API schemas
 - **Deprecated API Detection** (Pluto) - Detects removed and deprecated API versions
 - **Best Practices** (KubeLinter) - Checks security and configuration best practices
+- **AI-Powered Error Analysis** (OpenAI-compatible API) - Optional: sends validation errors to a self-hosted LLM for root cause analysis and fix suggestions
 
-All validation issues are logged and written to a single JSON report at `/tmp/validation-report.json`. Manifests are always passed through to ArgoCD regardless of findings. A `manifest-validator-report` ConfigMap is deployed alongside application resources, and an ArgoCD UI extension provides a "Manifest Validation" tab on each application.
+All validation issues are logged and written to a single JSON report at `/tmp/validation-report.json`. Manifests are always passed through to ArgoCD regardless of findings. A `manifest-validator-report` ConfigMap is deployed alongside application resources, and an ArgoCD UI extension provides a "Manifest Validation" tab on each application. When configured, AI analysis is included in the ConfigMap and rendered in the UI.
 
 ## Validation Checks
 
@@ -57,6 +58,9 @@ kubectl apply -f k8s/configmap-kube-linter.yaml
 kubectl apply -f k8s/configmap-kubeconform.yaml
 kubectl apply -f k8s/configmap-pluto.yaml
 kubectl apply -f k8s/configmap-extension.yaml
+
+# Optional: Apply OpenAI ConfigMap for AI-powered error analysis
+kubectl apply -f k8s/configmap-openai.yaml
 
 # Patch ArgoCD to add the CMP sidecar and UI extension
 kubectl patch argocd openshift-gitops -n openshift-gitops --type=merge --patch-file k8s/argocd-patch.yaml
@@ -132,14 +136,24 @@ After patching, the argocd-server pod will restart. Once it's ready, open the Ar
 | `cmp-pluto-config` | `TARGET_KUBERNETES_VERSION` | `v1.29.0` | Target K8s version for API deprecation |
 | `cmp-kube-linter-config` | `kube-linter.yaml` | See ConfigMap | KubeLinter check configuration |
 | `manifest-validator-extension` | `extension-manifest-validator.js` | See ConfigMap | ArgoCD UI extension JavaScript |
+| `cmp-openai-config` | `OPENAI_BASE_URL` | *(none)* | Base URL of the OpenAI-compatible API (AI analysis disabled if not set) |
+| `cmp-openai-config` | `OPENAI_API_KEY` | `NONE` | API key for the OpenAI-compatible endpoint |
+| `cmp-openai-config` | `OPENAI_MODEL_NAME` | `openai/gpt-oss-20b` | Model name to use for analysis |
+| `cmp-openai-config` | `OPENAI_TIMEOUT` | `30` | Request timeout in seconds |
 
 ### Customizing KubeLinter Rules
 
 Edit the `cmp-kube-linter-config` ConfigMap to enable/disable specific checks.
 
+### AI-Powered Error Analysis (Optional)
+
+When `cmp-openai-config` is applied and `OPENAI_BASE_URL` is set, the validator sends error reports to an OpenAI-compatible API after validation. The LLM returns root cause analysis, explanations, and fix suggestions as markdown, which is rendered in the ArgoCD UI below the error list.
+
+If the API is unavailable, times out, or the ConfigMap is not applied, the pipeline continues without AI analysis — the existing report and UI work exactly as before.
+
 ### Report ConfigMap
 
-The CMP outputs a `manifest-validator-report` ConfigMap to each application's target namespace containing the validation report as JSON. This ConfigMap is managed by ArgoCD as part of the application's resources and is cleaned up automatically if pruning is enabled. The UI extension reads this ConfigMap to display results.
+The CMP outputs a `manifest-validator-report` ConfigMap to each application's target namespace containing the validation report as JSON. When AI analysis is configured and succeeds, the ConfigMap also includes an `ai-analysis` key with the LLM's markdown response. This ConfigMap is managed by ArgoCD as part of the application's resources and is cleaned up automatically if pruning is enabled. The UI extension reads this ConfigMap to display results.
 
 ## Troubleshooting
 

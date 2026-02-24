@@ -125,6 +125,8 @@ output_report_configmap() {
     local report_json
     report_json=$(cat "$report_file")
 
+    local ai_analysis_file="/tmp/ai-analysis.md"
+
     cat <<EOF
 apiVersion: v1
 kind: ConfigMap
@@ -137,6 +139,12 @@ data:
   report.json: |
 $(echo "$report_json" | sed 's/^/    /')
 EOF
+
+    # Conditionally append AI analysis if available
+    if [ -f "$ai_analysis_file" ] && [ -s "$ai_analysis_file" ]; then
+        echo "  ai-analysis: |"
+        sed 's/^/    /' "$ai_analysis_file"
+    fi
 }
 
 export -f log_info log_warn log_error

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cmp-openai-config
+  namespace: openshift-gitops
+data:
+  OPENAI_BASE_URL: "http://gpt-oss-20b-demo-mlflow-agent-tracing.apps.ocp-beta-test.nerc.mghpcc.org/v1"
+  OPENAI_API_KEY: "NONE"
+  OPENAI_MODEL_NAME: "openai/gpt-oss-20b"
+  OPENAI_TIMEOUT: "30"

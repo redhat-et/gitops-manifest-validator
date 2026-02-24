@@ -91,6 +91,29 @@
       color: "#991b1b",
       fontFamily: "monospace",
     },
+    aiSection: {
+      marginTop: "24px",
+      background: "#f0f4ff",
+      border: "1px solid #c7d2fe",
+      borderRadius: "8px",
+      overflow: "hidden",
+    },
+    aiHeader: {
+      background: "#4f46e5",
+      color: "#fff",
+      padding: "12px 16px",
+      fontSize: "14px",
+      fontWeight: 600,
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+    },
+    aiContent: {
+      padding: "16px",
+      fontSize: "13px",
+      lineHeight: "1.6",
+      color: "#1e1b4b",
+    },
   };
 
   function ManifestValidationExtension({ application, tree }) {
@@ -129,6 +152,95 @@
     }
 
     return renderReport(state.report);
+  }
+
+  function markdownToHtml(md) {
+    if (!md) return "";
+    var html = md;
+
+    // Code blocks (``` ... ```)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function (_, lang, code) {
+      var escaped = code
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return (
+        '<pre style="background:#1e1b4b;color:#e0e7ff;padding:12px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.5"><code>' +
+        escaped +
+        "</code></pre>"
+      );
+    });
+
+    // Tables
+    html = html.replace(
+      /((?:\|.*\|\n)+)/g,
+      function (tableBlock) {
+        var rows = tableBlock.trim().split("\n");
+        if (rows.length < 2) return tableBlock;
+
+        var headerCells = rows[0]
+          .split("|")
+          .filter(function (c) { return c.trim() !== ""; })
+          .map(function (c) { return c.trim(); });
+
+        // Check if row 1 is separator
+        var isSep = /^\|[\s\-:|]+\|$/.test(rows[1].trim());
+        var dataStart = isSep ? 2 : 1;
+
+        var thead =
+          "<thead><tr>" +
+          headerCells
+            .map(function (c) {
+              return '<th style="border:1px solid #c7d2fe;padding:8px;background:#e0e7ff;text-align:left;font-size:12px">' + c + "</th>";
+            })
+            .join("") +
+          "</tr></thead>";
+
+        var tbody = "<tbody>";
+        for (var i = dataStart; i < rows.length; i++) {
+          var cells = rows[i]
+            .split("|")
+            .filter(function (c) { return c.trim() !== ""; })
+            .map(function (c) { return c.trim(); });
+          tbody +=
+            "<tr>" +
+            cells
+              .map(function (c) {
+                return '<td style="border:1px solid #c7d2fe;padding:8px;font-size:12px">' + c + "</td>";
+              })
+              .join("") +
+            "</tr>";
+        }
+        tbody += "</tbody>";
+
+        return (
+          '<table style="border-collapse:collapse;width:100%;margin:12px 0">' +
+          thead +
+          tbody +
+          "</table>"
+        );
+      }
+    );
+
+    // Headers
+    html = html.replace(/^### (.+)$/gm, '<h3 style="margin:16px 0 8px;font-size:14px;color:#312e81">$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2 style="margin:16px 0 8px;font-size:15px;color:#312e81">$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1 style="margin:16px 0 8px;font-size:16px;color:#312e81">$1</h1>');
+
+    // Bold
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+    // Inline code
+    html = html.replace(
+      /`([^`]+)`/g,
+      '<code style="background:#e0e7ff;padding:2px 5px;border-radius:3px;font-size:12px">$1</code>'
+    );
+
+    // Line breaks (preserve paragraph structure)
+    html = html.replace(/\n\n/g, "<br/><br/>");
+    html = html.replace(/\n/g, "<br/>");
+
+    return html;
   }
 
   async function fetchReport(application, tree, setState) {
@@ -181,6 +293,10 @@
       }
 
       const report = JSON.parse(reportJson);
+      const aiAnalysis = manifest.data && manifest.data["ai-analysis"];
+      if (aiAnalysis) {
+        report.aiAnalysis = aiAnalysis;
+      }
       setState({ loading: false, error: null, report });
     } catch (err) {
       setState({
@@ -279,6 +395,27 @@
         )
       );
     });
+
+    // AI Analysis section
+    if (report.aiAnalysis) {
+      children.push(
+        e(
+          "div",
+          { style: styles.aiSection, key: "ai" },
+          e(
+            "div",
+            { style: styles.aiHeader },
+            "AI-Powered Error Analysis"
+          ),
+          e("div", {
+            style: styles.aiContent,
+            dangerouslySetInnerHTML: {
+              __html: markdownToHtml(report.aiAnalysis),
+            },
+          })
+        )
+      );
+    }
 
     return e("div", { style: styles.container }, ...children);
   }

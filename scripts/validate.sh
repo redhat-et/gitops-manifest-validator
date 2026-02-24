@@ -69,6 +69,12 @@ if [ ${#VALIDATION_ERRORS[@]} -gt 0 ]; then
     done
 fi
 
+# Step 3b: Run AI analysis if errors exist and API is configured
+if [ ${#VALIDATION_ERRORS[@]} -gt 0 ] && [ -n "${OPENAI_BASE_URL:-}" ]; then
+    log_info "Running AI-powered error analysis..."
+    /home/argocd/scripts/ai-analysis.sh || log_warn "AI analysis unavailable, continuing without it"
+fi
+
 # Step 4: Output manifests (always pass through regardless of errors)
 log_info "Outputting manifests"
 for file in $YAML_FILES; do
