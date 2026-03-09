@@ -4,22 +4,25 @@ A Config Management Plugin (CMP) for ArgoCD/OpenShift GitOps that validates Kube
 
 ## Features
 
-- **Schema Validation** (Kubeconform) - Validates manifests against Kubernetes API schemas
-- **Deprecated API Detection** (Pluto) - Detects removed and deprecated API versions
-- **Best Practices** (KubeLinter) - Checks security and configuration best practices
-- **AI-Powered Error Analysis** (OpenAI-compatible API) - Optional: sends validation errors to a self-hosted LLM for root cause analysis and fix suggestions
+- **AI-Powered Manifest Analysis** - Uses self-hosted Ollama with qwen2.5:14b model for comprehensive manifest review
+- **Function Calling & Skills** - Python-based validation leverages Claude skills (k8s-lint-validator, k8s-manifest-reviewer) for intelligent analysis
+- **Security Best Practices** - Identifies security issues, misconfigurations, and optimization opportunities
+- **Non-Blocking Validation** - Manifests always deploy successfully; issues are reported for review
+- **ArgoCD UI Integration** - Dedicated "Manifest Validation" tab shows AI-powered analysis results
 
-All validation issues are logged and written to a single JSON report at `/tmp/validation-report.json`. Manifests are always passed through to ArgoCD regardless of findings. A `manifest-validator-report` ConfigMap is deployed alongside application resources, and an ArgoCD UI extension provides a "Manifest Validation" tab on each application. When configured, AI analysis is included in the ConfigMap and rendered in the UI.
+Validation results are written to a `manifest-validator-report` ConfigMap deployed alongside application resources. An ArgoCD UI extension provides a "Manifest Validation" tab displaying the AI analysis. All manifests pass through to ArgoCD regardless of findings.
 
-## Validation Checks
+## Validation Approach
 
-| Tool | Check | Description |
-|------|-------|-------------|
-| Kubeconform | Schema validation | Missing required fields, invalid values, type mismatches |
-| Pluto | Removed APIs | API versions removed in target K8s version |
-| Pluto | Deprecated APIs | API versions deprecated in target K8s version |
-| KubeLinter | Security | host-network, host-pid, host-ipc, privileged-container |
-| KubeLinter | Best practices | read-only root fs, CPU/memory requirements, latest tag, NET_RAW capability |
+The validator uses AI-powered analysis via Ollama to provide comprehensive manifest review:
+
+- **Schema Validation** - Detects invalid Kubernetes API usage, missing required fields
+- **API Deprecation** - Identifies removed or deprecated API versions
+- **Security Issues** - Flags privileged containers, host network/PID access, missing security contexts
+- **Best Practices** - Reviews resource limits, readiness/liveness probes, image tags
+- **Optimization** - Suggests improvements for efficiency, reliability, and maintainability
+
+The AI model can dynamically call validation skills (kubeconform, pluto, kubelinter) as needed during analysis.
 
 ## Prerequisites
 
@@ -49,34 +52,100 @@ oc start-build manifest-validator --from-dir=. -n openshift-gitops --follow
 oc get imagestream manifest-validator -n openshift-gitops
 ```
 
-### 2. Deploy Kubernetes Resources
+### 2. Deploy Ollama Service
+
+```bash
+# Apply all Ollama resources (PVC, Deployment, Service, Job)
+kubectl apply -f k8s/ollama/
+
+# Monitor model pull progress (this takes 10-30 minutes for ~8-10GB download)
+kubectl logs -n openshift-gitops job/ollama-model-pull -f
+
+
+# Wait for model pull to complete
+kubectl wait --for=condition=complete job/ollama-model-pull -n openshift-gitops --timeout=1800s
+
+# Verify Ollama is ready
+kubectl get pods -n openshift-gitops -l app.kubernetes.io/name=ollama
+```
+
+### 3. Deploy Kubernetes Resources
 
 ```bash
 # Apply ConfigMaps
 kubectl apply -f k8s/configmap-plugin.yaml
-kubectl apply -f k8s/configmap-kube-linter.yaml
-kubectl apply -f k8s/configmap-kubeconform.yaml
-kubectl apply -f k8s/configmap-pluto.yaml
-kubectl apply -f k8s/configmap-extension.yaml
-
-# Optional: Apply OpenAI ConfigMap for AI-powered error analysis
 kubectl apply -f k8s/configmap-openai.yaml
+kubectl apply -f k8s/configmap-extension.yaml
 
 # Patch ArgoCD to add the CMP sidecar and UI extension
 kubectl patch argocd openshift-gitops -n openshift-gitops --type=merge --patch-file k8s/argocd-patch.yaml
 ```
 
-### 3. Wait for Rollout
+### 4. Wait for Rollout
 
 ```bash
 kubectl rollout status deployment/openshift-gitops-repo-server -n openshift-gitops
 ```
 
-### 4. To Remove the sidecar
+### 5. Verify Deployment
 
+**Check CMP sidecar:**
 ```bash
-kubectl patch argocd openshift-gitops -n openshift-gitops --type=merge --patch-file k8s/argocd-remove.yaml
+kubectl get pods -n openshift-gitops -l app.kubernetes.io/name=openshift-gitops-repo-server \
+  -o jsonpath='{.items[0].spec.containers[*].name}'
+# Should include "manifest-validator"
 ```
+
+**Check CMP logs:**
+```bash
+kubectl logs -n openshift-gitops deployment/openshift-gitops-repo-server -c manifest-validator -f
+```
+
+**Test Ollama connectivity:**
+```bash
+kubectl run test-ollama -n openshift-gitops --rm -i --restart=Never \
+  --image=curlimages/curl -- \
+  curl -X POST http://ollama:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5:14b","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+Alternatively, use the test pod manifest:
+```bash
+kubectl apply -f k8s/ollama/test-ollama-pod.yaml
+kubectl logs -n openshift-gitops test-ollama -f
+kubectl delete pod test-ollama -n openshift-gitops
+```
+
+
+### 6. Test with Application
+
+Create a test application:
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: test-validator
+  namespace: openshift-gitops
+spec:
+  source:
+    plugin:
+      name: manifest-validator
+    repoURL: <your-repo>
+    path: <manifests-path>
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: test-ns
+```
+
+**Verify results:**
+1. Sync the application
+2. Check for ConfigMap: `kubectl get configmap manifest-validator-report -n test-ns`
+3. Verify ConfigMap has both keys: `kubectl get configmap manifest-validator-report -n test-ns -o yaml`
+4. Open ArgoCD UI → Navigate to application → Look for "Manifest Validation" tab
+5. Confirm AI analysis appears
+
+
 
 ## Usage
 
@@ -132,24 +201,23 @@ After patching, the argocd-server pod will restart. Once it's ready, open the Ar
 
 | ConfigMap | Key | Default | Description |
 |-----------|-----|---------|-------------|
-| `cmp-kubeconform-config` | `KUBERNETES_VERSION` | `1.28.0` | K8s version for schema validation |
-| `cmp-pluto-config` | `TARGET_KUBERNETES_VERSION` | `v1.29.0` | Target K8s version for API deprecation |
-| `cmp-kube-linter-config` | `kube-linter.yaml` | See ConfigMap | KubeLinter check configuration |
+| `cmp-plugin-config` | `plugin.yaml` | See ConfigMap | ArgoCD CMP plugin registration |
 | `manifest-validator-extension` | `extension-manifest-validator.js` | See ConfigMap | ArgoCD UI extension JavaScript |
-| `cmp-openai-config` | `OPENAI_BASE_URL` | *(none)* | Base URL of the OpenAI-compatible API (AI analysis disabled if not set) |
-| `cmp-openai-config` | `OPENAI_API_KEY` | `NONE` | API key for the OpenAI-compatible endpoint |
-| `cmp-openai-config` | `OPENAI_MODEL_NAME` | `openai/gpt-oss-20b` | Model name to use for analysis |
-| `cmp-openai-config` | `OPENAI_TIMEOUT` | `30` | Request timeout in seconds |
+| `cmp-openai-config` | `OPENAI_BASE_URL` | `http://ollama.openshift-gitops.svc.cluster.local:11434/v1` | Ollama service URL |
+| `cmp-openai-config` | `OPENAI_API_KEY` | `not-needed` | API key (not required for Ollama) |
+| `cmp-openai-config` | `OPENAI_MODEL_NAME` | `qwen2.5:14b` | Model name for analysis |
+| `cmp-openai-config` | `OPENAI_TIMEOUT` | `120` | Request timeout in seconds |
 
-### Customizing KubeLinter Rules
+### Ollama Configuration
 
-Edit the `cmp-kube-linter-config` ConfigMap to enable/disable specific checks.
+The Ollama service runs in the `openshift-gitops` namespace with:
+- **Model**: qwen2.5:14b (~8-10GB, auto-pulled via Job)
+- **Storage**: 20Gi PVC for model persistence
+- **Resources**: 2 CPU / 10Gi memory limits (8Gi requests, 10Gi limits to accommodate 8.7 GiB model requirement)
 
-### AI-Powered Error Analysis (Optional)
+### AI Analysis Customization
 
-When `cmp-openai-config` is applied and `OPENAI_BASE_URL` is set, the validator sends error reports to an OpenAI-compatible API after validation. The LLM returns root cause analysis, explanations, and fix suggestions as markdown, which is rendered in the ArgoCD UI below the error list.
-
-If the API is unavailable, times out, or the ConfigMap is not applied, the pipeline continues without AI analysis — the existing report and UI work exactly as before.
+The AI analysis behavior is controlled by the prompt in `scripts/validate.sh`. The Python script (`review_manifests.py`) uses function calling to dynamically load and execute Claude skills from `.claude/skills/` directory based on the analysis requirements.
 
 ### Report ConfigMap
 

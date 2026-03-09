@@ -12,6 +12,8 @@ RUN microdnf install -y \
     jq \
     findutils \
     shadow-utils \
+    python3.11 \
+    python3.11-pip \
     && microdnf clean all
 
 # Install kubeconform
@@ -33,14 +35,21 @@ RUN useradd -u 999 -g 0 -d /home/argocd argocd
 RUN mkdir -p /home/argocd/cmp-server/config \
     /home/argocd/scripts \
     /home/argocd/config \
+    /home/argocd/.claude/skills \
     && chown -R 999:0 /home/argocd
+
+# Copy skills directory for AI-powered analysis
+COPY skills/ /home/argocd/skills/
 
 # Copy scripts
 COPY scripts/ /home/argocd/scripts/
 COPY plugin.yaml /home/argocd/cmp-server/config/plugin.yaml
 
+# Install Python dependencies
+RUN pip3.11 install --no-cache-dir -r /home/argocd/scripts/requirements.txt
+
 # Set permissions
-RUN chmod +x /home/argocd/scripts/*.sh \
+RUN chmod +x /home/argocd/scripts/*.sh /home/argocd/scripts/*.py \
     && chown -R 999:0 /home/argocd \
     && chmod -R g=u /home/argocd
 

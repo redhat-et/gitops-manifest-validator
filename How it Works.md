@@ -6,52 +6,73 @@ This is an **ArgoCD Config Management Plugin (CMP)** that validates Kubernetes m
 
 ### Entry Point
 
-ArgoCD invokes `scripts/validate.sh` as a sidecar container whenever an Application using this plugin syncs. The plugin runs inside a custom Docker image containing three validation tools: **Kubeconform**, **Pluto**, and **KubeLinter**.
+ArgoCD invokes `scripts/validate.sh` as a sidecar container whenever an Application using this plugin syncs. The plugin runs inside a custom Docker image containing Python 3.11, the OpenAI SDK, validation tools (kubeconform, pluto, kubelinter), and Claude skills for intelligent analysis.
 
 ### Validation Pipeline
 
-The flow has five stages:
+The flow has four stages:
 
-**1. Collect YAML files** — Finds all `*.yaml`/`*.yml` files, excluding `kustomization.yaml` and hidden files.
+**1. Discover manifests** — `scripts/validate.sh` (bash wrapper) finds all `*.yaml`/`*.yml` files, excluding `kustomization.yaml` and hidden files.
 
-**2. Run three validation tools:**
+**2. Output manifests to stdout** — All discovered YAML files are written to stdout with `---` separators for ArgoCD consumption.
 
-| Tool | Purpose |
-|------|---------|
-| **Kubeconform** | Schema validation against K8s OpenAPI specs |
-| **Pluto** | Detects deprecated/removed API versions |
-| **KubeLinter** | Security and best-practice checks (configured via ConfigMap) |
+**3. AI-powered analysis** — The wrapper calls `scripts/review_manifests.py` (Python) which:
+- Connects to the Ollama service running in the cluster
+- Uses the qwen2.5:14b model with function calling capabilities
+- Dynamically loads Claude skills from `.claude/skills/` directory
+- Analyzes manifests by calling appropriate skills (k8s-lint-validator, k8s-manifest-reviewer)
+- Generates comprehensive markdown analysis with security, best practices, and optimization recommendations
+- Writes results to `/tmp/ollama_review_output.txt`
 
-**3. Collect errors** — `scripts/utils.sh` parses the JSON output from each tool and collects all findings into a single list, then generates a JSON report at `/tmp/validation-report.json`.
-
-**4. AI analysis (optional)** — If errors were found and `OPENAI_BASE_URL` is configured, `scripts/ai-analysis.sh` sends the error report to an OpenAI-compatible API. The LLM returns root cause analysis and fix suggestions as markdown, written to `/tmp/ai-analysis.md`. If the call fails or is unconfigured, this step is skipped with a warning.
-
-**5. Report and pass through:**
+**4. Generate ConfigMap report:**
 
 ```
-Issues found?
-  └─ YES → Log warnings, run AI analysis (if configured),
-           output original manifests to stdout,
-           output ConfigMap with report.json + ai-analysis (if available),
-           exit 0 (ArgoCD proceeds with deployment)
+AI analysis complete?
+  └─ YES → Create ConfigMap with report.json + ai-analysis,
+           output to stdout,
+           log completion to stderr,
+           exit 0 (always non-blocking)
 
-No issues?
-  └─ Output original manifests to stdout,
-     output ConfigMap with report.json, exit 0
+AI analysis failed?
+  └─ Create ConfigMap with report.json + error message,
+     output to stdout, exit 0
 ```
+
+### Ollama Integration
+
+The validator uses a self-hosted Ollama service instead of external APIs:
+- **Service**: Runs as a Deployment in `openshift-gitops` namespace
+- **Model**: qwen2.5:14b (14B parameter model, ~8-10GB)
+- **Storage**: 20Gi PVC for model persistence
+- **Endpoint**: `http://ollama.openshift-gitops.svc.cluster.local:11434/v1`
+- **Deployment**: Automated via `k8s/ollama/` resources, model auto-pulled by Kubernetes Job
+
+### Function Calling with Skills
+
+The Python script uses OpenAI's function calling API to dynamically invoke Claude skills:
+1. Skills are discovered from `.claude/skills/` directory at runtime
+2. Each skill's metadata (name, description, allowed-tools) is parsed from `SKILL.md`
+3. Skills are registered as callable functions in the API request
+4. The AI model decides which skills to call based on the manifest content
+5. Skill execution results are fed back to the model for comprehensive analysis
+
+This enables the AI to perform targeted validation (schema checks, security scans) only when needed, rather than running all tools blindly.
 
 ### Configuration
 
-Each tool is configured via its own ConfigMap:
+The validator is configured via two ConfigMaps:
 
-- **`cmp-kubeconform-config`** — Sets the `KUBERNETES_VERSION` environment variable for schema validation
-- **`cmp-pluto-config`** — Sets the `TARGET_KUBERNETES_VERSION` environment variable for API deprecation checks
-- **`cmp-kube-linter-config`** — Mounts a `kube-linter.yaml` config file with the list of enabled/disabled checks
-- **`cmp-openai-config`** (optional) — Sets `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL_NAME`, and `OPENAI_TIMEOUT` for AI-powered error analysis. All four env vars are marked `optional: true` in the ArgoCD patch, so the sidecar works without this ConfigMap.
+- **`cmp-plugin-config`** — ArgoCD CMP plugin registration (`plugin.yaml`)
+- **`cmp-openai-config`** — Ollama service connection settings:
+  - `OPENAI_BASE_URL`: Ollama service endpoint (default: in-cluster service)
+  - `OPENAI_MODEL_NAME`: Model to use (qwen2.5:14b)
+  - `OPENAI_TIMEOUT`: Request timeout in seconds (120s for larger model)
+
+Skills configuration is embedded in `.claude/skills/` directory structure copied into the container image at build time.
 
 ### UI Extension
 
-The ArgoCD UI extension (`extensions/extension-manifest-validator.js`) reads the `manifest-validator-report` ConfigMap and renders a "Manifest Validation" tab. When the ConfigMap includes an `ai-analysis` key, the extension converts the markdown to HTML and displays it in an "AI-Powered Error Analysis" section below the error list.
+The ArgoCD UI extension (`configmap-extension.yaml`) reads the `manifest-validator-report` ConfigMap and renders a "Manifest Validation" tab. The extension converts the markdown in the `ai-analysis` key to HTML and displays the AI-powered analysis results.
 
 ### Deployment
 
