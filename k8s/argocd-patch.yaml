@@ -11,10 +11,6 @@ spec:
       - name: cmp-plugin-config
         configMap:
           name: manifest-validator-plugin
-      # KubeLinter configuration
-      - name: cmp-kube-linter-config
-        configMap:
-          name: cmp-kube-linter-config
       # CMP temporary directory
       - name: cmp-tmp
         emptyDir: {}
@@ -38,42 +34,28 @@ spec:
             drop:
               - ALL
 
-        # Environment variables
+        # Environment variables for Ollama/OpenAI configuration
         env:
-          - name: KUBERNETES_VERSION
-            valueFrom:
-              configMapKeyRef:
-                name: cmp-kubeconform-config
-                key: KUBERNETES_VERSION
-          - name: TARGET_KUBERNETES_VERSION
-            valueFrom:
-              configMapKeyRef:
-                name: cmp-pluto-config
-                key: TARGET_KUBERNETES_VERSION
           - name: OPENAI_BASE_URL
             valueFrom:
               configMapKeyRef:
                 name: cmp-openai-config
                 key: OPENAI_BASE_URL
-                optional: true
           - name: OPENAI_API_KEY
             valueFrom:
               configMapKeyRef:
                 name: cmp-openai-config
                 key: OPENAI_API_KEY
-                optional: true
           - name: OPENAI_MODEL_NAME
             valueFrom:
               configMapKeyRef:
                 name: cmp-openai-config
                 key: OPENAI_MODEL_NAME
-                optional: true
           - name: OPENAI_TIMEOUT
             valueFrom:
               configMapKeyRef:
                 name: cmp-openai-config
                 key: OPENAI_TIMEOUT
-                optional: true
 
         # Resource limits
         resources:
@@ -96,10 +78,6 @@ spec:
           - name: cmp-plugin-config
             mountPath: /home/argocd/cmp-server/config/plugin.yaml
             subPath: plugin.yaml
-          # KubeLinter config
-          - name: cmp-kube-linter-config
-            mountPath: /home/argocd/config/kube-linter.yaml
-            subPath: kube-linter.yaml
           # Temporary directory
           - name: cmp-tmp
             mountPath: /tmp

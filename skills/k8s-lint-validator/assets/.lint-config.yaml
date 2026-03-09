@@ -1,0 +1,83 @@
+# Kubernetes Linting Configuration Template
+# Copy this file to your project root as .lint-config.yaml
+
+version: 1
+
+# Global settings
+strict: true                    # Fail on any issues (false = warnings only)
+ignore-missing-schemas: true    # Don't fail on missing CRD schemas
+
+# kube-linter configuration
+# Docs: https://docs.kubelinter.io/
+kube-linter:
+  enabled: true
+  add-all-built-in: true        # Enable all 60+ built-in checks
+
+  # Exclude specific checks (uncomment to disable)
+  exclude:
+    # - no-extensions-v1beta           # Allow deprecated extensions/v1beta APIs
+    # - no-read-only-root-fs           # Allow writable root filesystem
+    # - unset-cpu-requirements         # Allow missing CPU requests/limits
+    # - unset-memory-requirements      # Allow missing memory requests/limits
+    # - run-as-non-root                # Allow running as root
+    # - privileged-container           # Allow privileged containers
+    # - host-ipc                       # Allow hostIPC
+    # - host-network                   # Allow hostNetwork
+    # - host-pid                       # Allow hostPID
+    # - writable-host-mount            # Allow writable hostPath mounts
+
+  # Ignore specific paths (glob patterns)
+  ignore-paths:
+    - "test/**"
+    - "examples/**"
+    - ".github/**"
+    - "docs/**"
+
+# kubeconform configuration
+# Docs: https://github.com/yannh/kubeconform
+kubeconform:
+  enabled: true
+  kubernetes-version: "1.29.0"  # Target Kubernetes version
+  strict: true                   # Strict schema validation
+
+  # Schema locations (for CRDs)
+  schema-locations:
+    - default                    # Built-in Kubernetes schemas
+    # Add custom CRD schema locations:
+    # - 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+    # - 'https://example.com/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
+# pluto configuration
+# Docs: https://github.com/FairwindsOps/pluto
+pluto:
+  enabled: true
+
+  # Target versions for deprecation detection
+  target-versions:
+    k8s: "v1.29.0"               # Kubernetes version
+    # cert-manager: "v1.12.0"    # cert-manager version
+    # istio: "v1.18.0"           # Istio version
+
+  ignore-deprecations: false     # Don't ignore deprecated APIs
+  ignore-removals: false         # Don't ignore removed APIs
+
+  # Output verbosity
+  only-show-removed: false       # Show both deprecated and removed
+
+# Output settings
+output:
+  format: console                # console, json, markdown
+  show-passed: false             # Only show failures, not passed checks
+  group-by: file                 # file, tool, severity
+  color: true                    # Colorize console output
+
+# Severity thresholds
+severity:
+  min-level: info                # Minimum: critical, error, warning, info
+  fail-on: warning               # Fail CI/CD on: critical, error, warning, never
+
+# Advanced settings
+advanced:
+  parallel: 4                    # Number of parallel workers
+  timeout: 300                   # Timeout in seconds
+  max-file-size: 10485760        # Max file size in bytes (10MB)
