@@ -1,0 +1,135 @@
+# Scenario 3: PCI-DSS Compliance Gap Report
+# EXPECTED: Agent generates a structured gap report mapping manifests to PCI-DSS 4.0 requirements
+# EXPECTED: Agent identifies which controls are satisfied and which have gaps
+# EXPECTED: Agent provides remediation steps aligned to specific PCI-DSS requirements
+# EXPECTED: Agent produces audit-ready evidence documentation
+#
+# WITHOUT SKILL: Agent may identify general security issues but won't map them
+# to PCI-DSS requirement numbers, won't know which controls are mandatory
+# for cardholder data environments, and won't produce structured gap reports.
+
+---
+# Cardholder Data Environment (CDE) workloads
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: card-tokenizer
+  namespace: cde
+  labels:
+    app: card-tokenizer
+    pci-scope: "in-scope"
+    data-classification: "cardholder"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: card-tokenizer
+  template:
+    metadata:
+      labels:
+        app: card-tokenizer
+        pci-scope: "in-scope"
+    spec:
+      serviceAccountName: card-tokenizer-sa
+      automountServiceAccountToken: true
+      containers:
+      - name: tokenizer
+        # PCI-DSS 6.3.2 GAP: using mutable tag instead of digest
+        image: registry.internal/tokenizer:latest
+        ports:
+        - containerPort: 8443
+          protocol: TCP
+        env:
+        # PCI-DSS 3.4 GAP: storing card data reference in plain env var
+        - name: CARD_ENCRYPTION_KEY
+          value: "aes256-key-do-not-commit"
+        # PCI-DSS 8.3.1 GAP: hardcoded credential
+        - name: DB_PASSWORD
+          value: "prod-db-pass-2024"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        # PCI-DSS 10.2 PARTIAL: probes exist but no audit logging config
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8443
+            scheme: HTTPS
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: card-tokenizer-sa
+  namespace: cde
+
+---
+# PCI-DSS 1.3 GAP: No NetworkPolicy restricting traffic to/from CDE
+# (NetworkPolicy is ABSENT - this itself is a gap)
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: card-tokenizer
+  namespace: cde
+spec:
+  selector:
+    app: card-tokenizer
+  ports:
+  # PCI-DSS 4.2.1 QUESTION: Is TLS terminated here or at the app?
+  - port: 443
+    targetPort: 8443
+    protocol: TCP
+
+---
+# Non-CDE workload for comparison
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketing-site
+  namespace: public
+  labels:
+    app: marketing-site
+    pci-scope: "out-of-scope"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: marketing-site
+  template:
+    metadata:
+      labels:
+        app: marketing-site
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25.3
+        ports:
+        - containerPort: 80
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 101
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL

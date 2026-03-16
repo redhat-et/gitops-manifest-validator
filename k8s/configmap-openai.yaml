@@ -8,3 +8,6 @@ data:
   OPENAI_API_KEY: "NONE"
   OPENAI_MODEL_NAME: "openai/gpt-oss-20b"
   OPENAI_TIMEOUT: "120"
+  SYSTEM_PROMPT: "You are a Kubernetes expert assistant. You have access to skills to read and analyze Kubernetes manifests.\nOnly use the skills provided to you and don't make any assumptions about the context of the manifests.\nWhen you use a skill, mention which skill you used and why as part of your thinking.\nThe output should be a table in markdown format with the following columns:\n*Issue Number\n*Manifest File(s) the issue was found it\n*Issue Description\n*Explanation as to why its an issue\n*What skill was used to identify the issue\n*High/Medium/Low level\n*Proposed Fix.\nDo not emit special tokens like <|channel|>commentary for any tools calls."
+  USER_PROMPT: "Read the k8 files in the current directory.  Do not look in other directories.\nPerform a comprehensive linting on the files.\nAnalyze for security risks not performed by the linting. Validate against compliance frameworks, and existing security standards.\nReview for any cost issues and insure it is production ready.\nVerify that all resources work together properly.\nLastly, validate against known anti-patterns."
+  SKILLS_DIR: "/home/argocd/skills"

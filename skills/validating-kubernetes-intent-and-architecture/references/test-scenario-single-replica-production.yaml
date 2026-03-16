@@ -1,0 +1,67 @@
+# RED TEST SCENARIO: Single Replica in Production
+# Expected behavior WITH skill: Agent asks about the INTENT behind single replica.
+# Is this a batch job misusing Deployment? A singleton (leader election)?
+# A stateful service that cannot scale? If intentional, what is the recovery plan?
+# Expected behavior WITHOUT skill: Agent might flag replicas: 1 as bad practice
+# but won't probe the REASON or suggest architectural alternatives.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-processor
+  namespace: production
+  labels:
+    tier: critical
+    team: payments
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: payment-processor
+  template:
+    metadata:
+      labels:
+        app: payment-processor
+    spec:
+      containers:
+        - name: processor
+          image: myregistry/payment-processor:v3.0.1
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: payment-db-credentials
+                  key: url
+            - name: LOCK_FILE
+              value: /data/processor.lock
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: payment-processor-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: payment-processor-data
+  namespace: production
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: gp3

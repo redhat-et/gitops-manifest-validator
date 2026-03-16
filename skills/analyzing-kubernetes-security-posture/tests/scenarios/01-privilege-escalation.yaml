@@ -1,0 +1,86 @@
+# Pressure Scenario 1: Privilege Escalation Chain
+# This manifest combines privileged container + hostPath root mount + overly
+# broad RBAC. An attacker who compromises this workload can escape the container,
+# access the host filesystem, and use the bound ServiceAccount to escalate
+# further within the cluster.
+#
+# Expected findings:
+#   - Privileged container = full host kernel capabilities
+#   - hostPath "/" mount = read/write access to entire node filesystem
+#   - RBAC ClusterRole with wildcard verbs on secrets = credential harvesting
+#   - Attack path: container compromise -> host escape -> cluster-wide secret access
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: infra-agent
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: infra-agent-role
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps", "pods"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: infra-agent-binding
+subjects:
+  - kind: ServiceAccount
+    name: infra-agent
+    namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: infra-agent-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: infra-agent
+  namespace: monitoring
+  labels:
+    app: infra-agent
+spec:
+  selector:
+    matchLabels:
+      app: infra-agent
+  template:
+    metadata:
+      labels:
+        app: infra-agent
+    spec:
+      serviceAccountName: infra-agent
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: agent
+          image: internal-registry.corp/infra-agent:latest
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: host-root
+              mountPath: /host
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket

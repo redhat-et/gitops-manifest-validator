@@ -1,0 +1,61 @@
+# TEST SCENARIO: Missing ConfigMap and Secret references
+# Deployment references ConfigMap "app-config" and Secret "db-credentials"
+# Neither exists in the manifest set
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  labels:
+    app: backend-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-api
+  template:
+    metadata:
+      labels:
+        app: backend-api
+    spec:
+      containers:
+      - name: api
+        image: myregistry/backend:v2.1
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: app-config
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/app
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: app-config
+          items:
+          - key: config.yaml
+            path: config.yaml
+      - name: tls-certs
+        secret:
+          secretName: tls-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-api
+spec:
+  selector:
+    app: backend-api
+  ports:
+  - port: 8080
+    targetPort: 8080

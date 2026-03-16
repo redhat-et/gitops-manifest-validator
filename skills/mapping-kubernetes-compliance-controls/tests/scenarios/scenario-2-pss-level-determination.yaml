@@ -1,0 +1,115 @@
+# Scenario 2: Pod Security Standards Level Determination
+# EXPECTED: Agent determines the PSS level each Pod qualifies for (Privileged/Baseline/Restricted)
+# EXPECTED: Agent identifies specific fields that prevent achieving a higher level
+# EXPECTED: Agent explains what changes are needed to reach Restricted
+#
+# WITHOUT SKILL: Agent may comment on security settings but won't map to
+# PSS levels or know the exact field requirements for each level.
+
+---
+# Pod A: Should be classified as PRIVILEGED (violates Baseline)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug-pod
+  namespace: development
+  labels:
+    app: debug-tools
+spec:
+  hostNetwork: true
+  hostPID: true
+  containers:
+  - name: debug
+    image: registry.internal/debug-tools:latest
+    securityContext:
+      privileged: true
+      capabilities:
+        add:
+        - SYS_PTRACE
+        - SYS_ADMIN
+
+---
+# Pod B: Should be classified as BASELINE (passes Baseline, fails Restricted)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-pod
+  namespace: production
+  labels:
+    app: worker
+spec:
+  containers:
+  - name: worker
+    image: registry.internal/worker:v3.1.0
+    securityContext:
+      # Passes Baseline (not privileged)
+      privileged: false
+      # FAILS Restricted: must be true for Restricted
+      runAsNonRoot: false
+      # FAILS Restricted: must be true for Restricted
+      # readOnlyRootFilesystem not set (defaults false)
+      # FAILS Restricted: capabilities not dropped
+      capabilities:
+        add:
+        - NET_BIND_SERVICE
+    ports:
+    - containerPort: 8080
+
+---
+# Pod C: Should be classified as RESTRICTED (passes all checks)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-api
+  namespace: production
+  labels:
+    app: secure-api
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: api
+    image: registry.internal/api:v2.0.0@sha256:abc123def456
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+        - ALL
+    ports:
+    - containerPort: 8443
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+---
+# Pod D: Tricky case - almost Restricted but missing seccompProfile
+apiVersion: v1
+kind: Pod
+metadata:
+  name: almost-restricted
+  namespace: production
+  labels:
+    app: almost-restricted
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    # Missing seccompProfile - required for Restricted
+  containers:
+  - name: app
+    image: registry.internal/app:v1.0.0
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+        - ALL

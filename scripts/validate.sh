@@ -66,16 +66,16 @@ main() {
     fi
 
     # Check if output file was created
-    if [ ! -f /tmp/ollama_review_output.txt ]; then
+    if [ ! -f ./ollama_review_output.txt ]; then
         log_error "AI analysis did not produce output file, creating placeholder..."
-        echo "AI analysis failed or timed out" > /tmp/ollama_review_output.txt
+        echo "AI analysis failed or timed out" > ./ollama_review_output.txt
     fi
 
     # Read AI analysis output
     ai_analysis=""
-    if [ -f /tmp/ollama_review_output.txt ]; then
-        ai_analysis=$(cat /tmp/ollama_review_output.txt)
-        log_info "AI analysis completed ($(wc -l < /tmp/ollama_review_output.txt) lines)"
+    if [ -f ./ollama_review_output.txt ]; then
+        ai_analysis=$(cat ./ollama_review_output.txt)
+        log_info "AI analysis completed ($(wc -l < ./ollama_review_output.txt) lines)"
     else
         log_warn "No AI analysis output found"
         ai_analysis="No analysis available"

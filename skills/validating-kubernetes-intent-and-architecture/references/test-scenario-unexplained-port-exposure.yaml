@@ -1,0 +1,56 @@
+# RED TEST SCENARIO: Unexplained Port Exposure
+# Expected behavior WITH skill: Agent asks WHY ports 8080, 9090, and 5432 are
+# exposed. What service runs on each? Why is a database port exposed on a
+# web-facing Deployment? Is port 9090 for metrics (Prometheus) or application traffic?
+# Expected behavior WITHOUT skill: Agent accepts manifest without questioning
+# the exposed ports or their purpose.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: production
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      containers:
+        - name: order-service
+          image: myregistry/order-service:v2.1.0
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: production
+spec:
+  type: LoadBalancer
+  selector:
+    app: order-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+    - name: db
+      port: 5432
+      targetPort: 5432

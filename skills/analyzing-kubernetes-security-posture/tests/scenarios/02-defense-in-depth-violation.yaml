@@ -1,0 +1,71 @@
+# Pressure Scenario 2: Defense-in-Depth Violation
+# This manifest violates multiple defense layers simultaneously:
+#   - No NetworkPolicy = unrestricted lateral movement
+#   - Runs as root (runAsNonRoot not set, no user specified)
+#   - Service account token auto-mounted = K8s API accessible from container
+#   - Writable root filesystem = attacker can modify binaries
+#   - No resource limits = potential for resource-based DoS
+#   - No seccomp/AppArmor profile = full syscall access
+#
+# Expected findings:
+#   - Missing network segmentation enables lateral movement
+#   - Root execution + writable FS = binary replacement attacks
+#   - Auto-mounted SA token + no NetworkPolicy = K8s API reachable for recon
+#   - No seccomp = container can make dangerous syscalls (ptrace, mount, etc.)
+#   - Combined effect: single container compromise leads to cluster-wide impact
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-api
+  namespace: production
+  labels:
+    app: web-api
+    tier: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-api
+  template:
+    metadata:
+      labels:
+        app: web-api
+        tier: backend
+    spec:
+      # automountServiceAccountToken not set - defaults to true
+      containers:
+        - name: api
+          image: web-api:v2.1.0
+          ports:
+            - containerPort: 8080
+              name: http
+          # No securityContext at all - runs as root with writable FS
+          # No resource limits
+          env:
+            - name: DB_HOST
+              value: "postgres.production.svc.cluster.local"
+            - name: DB_PORT
+              value: "5432"
+            - name: REDIS_URL
+              value: "redis://redis.production.svc.cluster.local:6379"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-api
+  namespace: production
+spec:
+  selector:
+    app: web-api
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http
+# NOTE: No NetworkPolicy exists in this namespace

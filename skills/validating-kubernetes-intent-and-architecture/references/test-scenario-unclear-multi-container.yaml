@@ -1,0 +1,104 @@
+# RED TEST SCENARIO: Unclear Architectural Pattern (Multi-Container Pod)
+# Expected behavior WITH skill: Agent identifies the multi-container pattern and
+# asks clarifying questions: Is container-b a sidecar (log shipper, proxy)?
+# An ambassador (outbound proxy)? An adapter (format converter)? Why do both
+# containers mount the same volume? Is there a circular dependency risk?
+# Should this be a separate Deployment instead?
+# Expected behavior WITHOUT skill: Agent reviews each container in isolation,
+# may flag individual issues but misses the architectural pattern entirely.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-pipeline
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: data-pipeline
+  template:
+    metadata:
+      labels:
+        app: data-pipeline
+    spec:
+      initContainers:
+        - name: schema-migrator
+          image: myregistry/schema-tool:v1.2.0
+          command: ["./migrate", "--target", "latest"]
+          env:
+            - name: DB_HOST
+              value: postgres.database.svc.cluster.local
+          volumeMounts:
+            - name: config
+              mountPath: /etc/config
+      containers:
+        - name: ingester
+          image: myregistry/data-ingester:v4.0.0
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          volumeMounts:
+            - name: shared-data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/config
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+        - name: transformer
+          image: myregistry/data-transformer:v2.3.0
+          ports:
+            - containerPort: 8081
+          volumeMounts:
+            - name: shared-data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/config
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+        - name: exporter
+          image: myregistry/metrics-exporter:v1.0.0
+          ports:
+            - containerPort: 9100
+          args: ["--source=/data/metrics", "--format=prometheus"]
+          volumeMounts:
+            - name: shared-data
+              mountPath: /data
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: shared-data
+          emptyDir:
+            sizeLimit: 5Gi
+        - name: config
+          configMap:
+            name: pipeline-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-config
+  namespace: production
+data:
+  pipeline.yaml: |
+    stages:
+      - ingest
+      - transform
+      - export
+    retry: 3

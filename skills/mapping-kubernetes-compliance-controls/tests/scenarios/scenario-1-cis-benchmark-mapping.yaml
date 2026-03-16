@@ -1,0 +1,113 @@
+# Scenario 1: CIS Kubernetes Benchmark Mapping
+# EXPECTED: Agent maps each security control to specific CIS Benchmark controls (5.2.x)
+# EXPECTED: Agent identifies pass/fail for each control with evidence
+# EXPECTED: Agent generates audit-ready output with control IDs
+#
+# WITHOUT SKILL: Agent may note security issues generically but won't map
+# to specific CIS control numbers or produce structured compliance evidence.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-processor
+  namespace: finance
+  labels:
+    app: payment-processor
+    tier: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: payment-processor
+  template:
+    metadata:
+      labels:
+        app: payment-processor
+    spec:
+      # CIS 5.2.6 FAIL: hostNetwork enabled
+      hostNetwork: true
+      # CIS 5.2.6 FAIL: hostPID enabled
+      hostPID: true
+      automountServiceAccountToken: true
+      containers:
+      - name: payment-processor
+        image: registry.internal/payments:v2.4.1
+        ports:
+        - containerPort: 8443
+          protocol: TCP
+        securityContext:
+          # CIS 5.2.1 FAIL: privileged container
+          privileged: true
+          # CIS 5.2.3 FAIL: not running as non-root
+          runAsNonRoot: false
+          runAsUser: 0
+          # CIS 5.2.5 FAIL: allows privilege escalation
+          allowPrivilegeEscalation: true
+          # CIS 5.2.9 FAIL: writable root filesystem
+          readOnlyRootFilesystem: false
+          capabilities:
+            # CIS 5.2.2 FAIL: adds dangerous capabilities
+            add:
+            - SYS_ADMIN
+            - NET_ADMIN
+            # CIS 5.2.4: NET_RAW not dropped
+            # (missing drop of NET_RAW)
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        volumeMounts:
+        - name: host-data
+          mountPath: /data
+      volumes:
+      # CIS 5.2.7 FAIL: hostPath volume
+      - name: host-data
+        hostPath:
+          path: /var/data/payments
+          type: DirectoryOrCreate
+---
+# Second deployment: mostly compliant for comparison
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: finance
+  labels:
+    app: api-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: api-gateway-sa
+      containers:
+      - name: api-gateway
+        image: registry.internal/gateway:v1.8.0
+        ports:
+        - containerPort: 8443
+        securityContext:
+          privileged: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
