@@ -4,7 +4,7 @@ A Config Management Plugin (CMP) for ArgoCD/OpenShift GitOps that validates Kube
 
 ## Features
 
-- **AI-Powered Manifest Analysis** - Uses self-hosted Ollama with qwen2.5:14b model for comprehensive manifest review
+- **AI-Powered Manifest Analysis** - Uses hosted Ollama with gpt-oss-20b model for comprehensive manifest review
 - **Function Calling & Skills** - Python-based validation leverages Claude skills (k8s-lint-validator, k8s-manifest-reviewer) for intelligent analysis
 - **Security Best Practices** - Identifies security issues, misconfigurations, and optimization opportunities
 - **Non-Blocking Validation** - Manifests always deploy successfully; issues are reported for review
@@ -27,7 +27,7 @@ The AI model can dynamically call validation skills (kubeconform, pluto, kubelin
 ## Prerequisites
 
 - OpenShift GitOps or ArgoCD installed
-- Podman installed locally
+- Podman to build and upload the sidecar image
 
 ## Installation
 
@@ -52,24 +52,8 @@ oc start-build manifest-validator --from-dir=. -n openshift-gitops --follow
 oc get imagestream manifest-validator -n openshift-gitops
 ```
 
-### 2. Deploy Ollama Service
 
-```bash
-# Apply all Ollama resources (PVC, Deployment, Service, Job)
-kubectl apply -f k8s/ollama/
-
-# Monitor model pull progress (this takes 10-30 minutes for ~8-10GB download)
-kubectl logs -n openshift-gitops job/ollama-model-pull -f
-
-
-# Wait for model pull to complete
-kubectl wait --for=condition=complete job/ollama-model-pull -n openshift-gitops --timeout=1800s
-
-# Verify Ollama is ready
-kubectl get pods -n openshift-gitops -l app.kubernetes.io/name=ollama
-```
-
-### 3. Deploy Kubernetes Resources
+### 2. Deploy Kubernetes Resources
 
 ```bash
 # Apply ConfigMaps
@@ -81,13 +65,13 @@ kubectl apply -f k8s/configmap-extension.yaml
 kubectl patch argocd openshift-gitops -n openshift-gitops --type=merge --patch-file k8s/argocd-patch.yaml
 ```
 
-### 4. Wait for Rollout
+### 3. Wait for Rollout
 
 ```bash
 kubectl rollout status deployment/openshift-gitops-repo-server -n openshift-gitops
 ```
 
-### 5. Verify Deployment
+### 4. Verify Deployment
 
 **Check CMP sidecar:**
 ```bash
@@ -101,24 +85,8 @@ kubectl get pods -n openshift-gitops -l app.kubernetes.io/name=openshift-gitops-
 kubectl logs -n openshift-gitops deployment/openshift-gitops-repo-server -c manifest-validator -f
 ```
 
-**Test Ollama connectivity:**
-```bash
-kubectl run test-ollama -n openshift-gitops --rm -i --restart=Never \
-  --image=curlimages/curl -- \
-  curl -X POST http://ollama:11434/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5:14b","messages":[{"role":"user","content":"Hello"}]}'
-```
 
-Alternatively, use the test pod manifest:
-```bash
-kubectl apply -f k8s/ollama/test-ollama-pod.yaml
-kubectl logs -n openshift-gitops test-ollama -f
-kubectl delete pod test-ollama -n openshift-gitops
-```
-
-
-### 6. Test with Application
+### 5. Test with Application
 
 Create a test application:
 ```yaml
@@ -203,17 +171,12 @@ After patching, the argocd-server pod will restart. Once it's ready, open the Ar
 |-----------|-----|---------|-------------|
 | `cmp-plugin-config` | `plugin.yaml` | See ConfigMap | ArgoCD CMP plugin registration |
 | `manifest-validator-extension` | `extension-manifest-validator.js` | See ConfigMap | ArgoCD UI extension JavaScript |
-| `cmp-openai-config` | `OPENAI_BASE_URL` | `http://ollama.openshift-gitops.svc.cluster.local:11434/v1` | Ollama service URL |
+| `cmp-openai-config` | `OPENAI_BASE_URL` | `http://openshift-gitops.svc.cluster.local:11434/v1` | Ollama service URL |
 | `cmp-openai-config` | `OPENAI_API_KEY` | `not-needed` | API key (not required for Ollama) |
 | `cmp-openai-config` | `OPENAI_MODEL_NAME` | `qwen2.5:14b` | Model name for analysis |
 | `cmp-openai-config` | `OPENAI_TIMEOUT` | `120` | Request timeout in seconds |
 
-### Ollama Configuration
 
-The Ollama service runs in the `openshift-gitops` namespace with:
-- **Model**: qwen2.5:14b (~8-10GB, auto-pulled via Job)
-- **Storage**: 20Gi PVC for model persistence
-- **Resources**: 2 CPU / 10Gi memory limits (8Gi requests, 10Gi limits to accommodate 8.7 GiB model requirement)
 
 ### AI Analysis Customization
 
