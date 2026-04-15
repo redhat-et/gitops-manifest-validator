@@ -425,11 +425,9 @@
     ManifestValidationExtension,
     "Manifest Validation",
     "fa-clipboard-check",
-    {
-      shouldDisplay: (app) => {
-        const plugin = app.spec?.source?.plugin;
-        return plugin?.name === "manifest-validator";
-      },
+    (app) => {
+      const plugin = app.spec?.source?.plugin;
+      return plugin?.name === "manifest-validator";
     }
   );
 })(window);
