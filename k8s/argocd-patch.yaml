@@ -5,6 +5,7 @@ metadata:
   namespace: openshift-gitops
 spec:
   repo:
+    execTimeout: 300
     # Volumes for CMP sidecar
     volumes:
       # Plugin configuration
@@ -36,6 +37,8 @@ spec:
 
         # Environment variables for Ollama/OpenAI configuration
         env:
+          - name: ARGOCD_EXEC_TIMEOUT
+            value: "300"
           - name: OPENAI_BASE_URL
             valueFrom:
               configMapKeyRef:
@@ -43,7 +46,7 @@ spec:
                 key: OPENAI_BASE_URL
           - name: OPENAI_API_KEY
             valueFrom:
-              configMapKeyRef:
+              secretKeyRef:
                 name: cmp-openai-config
                 key: OPENAI_API_KEY
           - name: OPENAI_MODEL_NAME
@@ -82,7 +85,14 @@ spec:
           - name: cmp-tmp
             mountPath: /tmp
 
+  controller:
+    extraCommandArgs:
+      - --repo-server-timeout-seconds
+      - "300"
   server:
+    extraCommandArgs:
+      - --repo-server-timeout-seconds
+      - "300"
     volumes:
       - name: manifest-validator-extension
         configMap:

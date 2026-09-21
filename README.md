@@ -61,8 +61,17 @@ kubectl apply -f k8s/configmap-plugin.yaml
 kubectl apply -f k8s/configmap-openai.yaml
 kubectl apply -f k8s/configmap-extension.yaml
 
+# Create the OpenAI credential separately; do not commit the rendered Secret.
+oc create secret generic cmp-openai-config -n openshift-gitops \
+  --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
+  --dry-run=client -o yaml | oc apply -f -
+
 # Patch ArgoCD to add the CMP sidecar and UI extension
 kubectl patch argocd openshift-gitops -n openshift-gitops --type=merge --patch-file k8s/argocd-patch.yaml
+
+# Force manifest generation without syncing application resources.
+oc annotate application app-spring-petclinic -n openshift-gitops \
+  argocd.argoproj.io/refresh=hard --overwrite
 ```
 
 ### 3. Wait for Rollout
@@ -74,13 +83,16 @@ kubectl rollout status deployment/openshift-gitops-repo-server -n openshift-gito
 ### 4. Verify Deployment
 
 **Check CMP sidecar:**
+
 ```bash
 kubectl get pods -n openshift-gitops -l app.kubernetes.io/name=openshift-gitops-repo-server \
   -o jsonpath='{.items[0].spec.containers[*].name}'
-# Should include "manifest-validator"
 ```
 
+Should include "manifest-validator"
+
 **Check CMP logs:**
+
 ```bash
 kubectl logs -n openshift-gitops deployment/openshift-gitops-repo-server -c manifest-validator -f
 ```
