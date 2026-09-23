@@ -217,4 +217,6 @@ kubectl logs -n openshift-gitops deployment/openshift-gitops-repo-server -c mani
 
 ## License
 
-MIT
+Apache License 2.0 — see [`LICENSE`](LICENSE) for the full text.
+
+Copyright 2026 Red Hat ACE Team
